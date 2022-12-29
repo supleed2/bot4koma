@@ -10,38 +10,48 @@ listenChannelIDs = [
 outputChannelID = 960995261570756690 # ICAS - 4koma-archive
 fourKomaRegex = re.compile(r"^(?:[\s\S]*\[4KOMA\] (\d{4}\-(?:0[1-9]|1[012])\-(?:0[1-9]|[12][0-9]|3[01])))\s*([\s\S]*)$")
 contentsRegex = re.compile(r"^[\S\s]*[cC]hapter[^\d]*([\w.]+)[\S\s]*$")
-splitSize = 10
-contentsMsgID = None
+contentsMsgIDs = None
 
 with open("conf.json", "r") as conf:
-    contentsMsgID = json.load(conf)["contentsMsgID"]
+    contentsMsgIDs = json.load(conf)["contentsMsgIDs"]
 
 async def generate_contents():
-    global contentsMsgID
-    if contentsMsgID is not None:
-        try:
-            oldmsg = await outputChannel.fetch_message(contentsMsgID)
-        except discord.errors.NotFound:
-            print(f"[ ERR ] {datetime.now().ctime()} Old Contents message not found, skipping")
-        else:
-            await oldmsg.delete()
-            print(f"[INFO:] {datetime.now().ctime()} Deleted old Contents message")
+    global contentsMsgIDs
+    if contentsMsgIDs is not None:
+        for contentsMsgID in contentsMsgIDs:
+            try:
+                oldmsg = await outputChannel.fetch_message(contentsMsgID)
+            except discord.errors.NotFound:
+                print(f"[ ERR ] {datetime.now().ctime()} Old Contents message ({contentsMsgID}) not found, skipping")
+            else:
+                await oldmsg.delete()
+                print(f"[INFO:] {datetime.now().ctime()} Deleted old Contents message ({contentsMsgID})")
     bot_messages = [(contentsRegex.match(message.content).group(1), message.jump_url)
         for message in await outputChannel.history(limit=1000).flatten()
         if message.author == bot.user][::-1]
-    split_bot_messages = [bot_messages[i:i+splitSize] for i in range(0, len(bot_messages), splitSize)]
+    split_bot_messages = [bot_messages[i:i+10] for i in range(0, len(bot_messages), 10)]
+    grouped_bot_messages = [split_bot_messages[i:i+6] for i in range(0, len(split_bot_messages), 6)]
     embed = discord.Embed(title="4Koma Archive",
         description="Hey guys! We have compiled all the past 4Koma here, come check them out and walk down memory lane <:2bhappy:370922383256715265>")
-    for msgs in split_bot_messages:
+    for msgs in grouped_bot_messages[0]:
         embed.add_field(
             name=f"Chapters {msgs[0][0]} - {msgs[-1][0]}",
             value=", ".join([f"[{msg[0]}]({msg[1]})" for msg in msgs]),
             inline=False)
-    newContentsMsg = await outputChannel.send(embed=embed)
-    contentsMsgID = newContentsMsg.id
-    print(f"[INFO:] {datetime.now().ctime()} Regenerated Contents with {len(bot_messages)} entries, id: {contentsMsgID}")
+    newContentsMsgs = [await outputChannel.send(embed=embed)]
+    for part, extras in enumerate(grouped_bot_messages[1:]):
+        embed = discord.Embed(title=f"4Koma Archive (Part {part + 2})",
+            description="Another message for the remaining links *smh Discord with their 6000 character per message limit* <:aquaDismay:1007404394368745634>")
+        for msgs in extras:
+            embed.add_field(
+                name=f"Chapters {msgs[0][0]} - {msgs[-1][0]}",
+                value=", ".join([f"[{msg[0]}]({msg[1]})" for msg in msgs]),
+                inline=False)
+        newContentsMsgs.append(await outputChannel.send(embed=embed))
+    contentsMsgIDs = [msg.id for msg in newContentsMsgs]
+    print(f"[INFO:] {datetime.now().ctime()} Regenerated Contents with {len(bot_messages)} entries, IDs: {contentsMsgIDs}")
     with open("conf.json", "w") as conf:
-        json.dump({"contentsMsgID":contentsMsgID}, conf)
+        json.dump({"contentsMsgIDs":contentsMsgIDs}, conf)
 
 @bot.event
 async def on_ready():
@@ -58,7 +68,7 @@ async def on_ready():
     else:
         print(f"[ ERR ] {datetime.now().ctime()} Failed to get output channel, ID: {outputChannelID}")
         await bot.change_presence(status=discord.Status.do_not_disturb, activity=discord.Game(name="Failed to connect output channel"))
-    print(f"[INFO:] {datetime.now().ctime()} Contents Message ID from conf.json: {contentsMsgID}")
+    print(f"[INFO:] {datetime.now().ctime()} Contents Message IDs from conf.json: {contentsMsgIDs}")
     committeeRole = bot.get_guild(249891637008793600).get_role(250056298710827008)
     if committeeRole is not None:
         print(f"[INFO:] {datetime.now().ctime()} Committee Role bound")
@@ -72,7 +82,7 @@ async def on_message(message: discord.Message):
     elif message.channel.id in listenChannelIDs:
         if committeeRole in message.author.roles:
             if message.content.startswith("!contents"):
-                print(f"[INFO:] {datetime.now().ctime()} Force regenerate contents message")
+                print(f"[INFO:] {datetime.now().ctime()} Force regenerate contents messages")
                 await message.delete()
                 await generate_contents()
                 return
