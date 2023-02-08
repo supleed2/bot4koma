@@ -2,7 +2,7 @@ from datetime import datetime
 import discord, json, os, re
 from textwrap import indent
 
-bot = discord.Client()
+bot = discord.Client(intents = discord.Intents.default())
 listenChannelIDs = [
     250056894335549440, # ICAS - announcements
     960995261570756690, # ICAS - 4koma-archive
@@ -27,7 +27,7 @@ async def generate_contents():
                 await oldmsg.delete()
                 print(f"[INFO:] {datetime.now().ctime()} Deleted old Contents message ({contentsMsgID})")
     bot_messages = [(contentsRegex.match(message.content).group(1), message.jump_url)
-        for message in await outputChannel.history(limit=1000).flatten()
+        async for message in outputChannel.history(limit=1000)
         if message.author == bot.user][::-1]
     split_bot_messages = [bot_messages[i:i+10] for i in range(0, len(bot_messages), 10)]
     grouped_bot_messages = [split_bot_messages[i:i+6] for i in range(0, len(split_bot_messages), 6)]
